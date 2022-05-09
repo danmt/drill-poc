@@ -1,3 +1,4 @@
+import { BN } from "@project-serum/anchor";
 import { PublicKey } from "@solana/web3.js";
 import { Probot } from "probot";
 import {
@@ -27,6 +28,48 @@ export = (app: Probot) => {
 
     if (label?.name !== "drill:bounty") {
       return;
+    }
+
+    const [boardPublicKey] = await PublicKey.findProgramAddress([
+      Buffer.from('board', 'utf8'),
+      new BN(repository.id).toArrayLike(Buffer, "le", 4),
+    ], program.programId);
+    const [bountyPublicKey] = await PublicKey.findProgramAddress([
+      Buffer.from('bounty', 'utf8'),
+      boardPublicKey.toBuffer(),
+      new BN(issue.number).toArrayLike(Buffer, "le", 4),
+    ], program.programId);
+
+    const bountyAccount = await program.account.bounty.fetchNullable(bountyPublicKey);
+
+    if (bountyAccount !== null) {
+      if (bountyAccount.isClosed) {
+        return Promise.all([
+          context.octokit.issues.removeLabel(
+            context.issue({
+              name: "drill:bounty",
+            })
+          ),
+          context.octokit.issues.addLabels(
+            context.issue({
+              labels: ["drill:bounty:closed"],
+            })
+          ),
+        ])  
+      } else {
+        return Promise.all([
+          context.octokit.issues.removeLabel(
+            context.issue({
+              name: "drill:bounty",
+            })
+          ),
+          context.octokit.issues.addLabels(
+            context.issue({
+              labels: ["drill:bounty:enabled"],
+            })
+          ),
+        ])
+      }
     }
 
     await Promise.all([
