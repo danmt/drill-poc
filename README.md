@@ -10,6 +10,9 @@ Once you have linked your repo to a board it's a matter of deploying your GitHub
 # Install dependencies
 npm install
 
+# Build the bot
+npm run build
+
 # Run the bot
 npm start
 ```
@@ -62,9 +65,9 @@ Retrying the process only takes adding a _manual-close_ label to the issue that 
 
 Closed bounty-enabled issues can have their assignee changed by a code owner, in which case, the GitHub app picks the change and sends a transaction to change the bounty hunter. Errors and success are dealt in the same manner as the previous points.
 
-## Synced bounty comment
+## Bounty status tracking
 
-Bounties may increase with time as sponsors deposit into the vaults, in order to reduce the entry barrier, the total accumulated for the bounty is shown in a comment in the issue along with a Solana Pay QR that allows sponsors to deposit while their assets remain safe without having to connect their wallet with yet another dapp.
+Bounties may increase overtime as sponsors deposit into the vaults, in order to reduce the entry barrier, the total accumulated for the bounty is shown in a comment in the issue along with a Solana Pay QR that allows sponsors to deposit while their assets remain safe without having to connect their wallet with yet another dapp.
 
 ## Contributing
 
