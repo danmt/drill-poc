@@ -1,6 +1,8 @@
-# drill-poc
+# Drill Github App Template
 
-> A GitHub App built with [Probot](https://github.com/probot/probot) that A Probot app
+A template for a GitHub app made using Probot, the intention of this template is to be used by the Drill CLI to generate custodial GitHub apps that enable the Drill Bounty Program directly in GitHub.
+
+Once you have linked your repo to a board it's a matter of deploying your GitHub app to your desired location and install your app into the repository. **Ideally**, you are only allowed to install the app in the repo matching the board.
 
 ## Setup
 
@@ -21,6 +23,49 @@ docker build -t drill-poc .
 # 2. Start container
 docker run -e APP_ID=<app-id> -e PRIVATE_KEY=<pem-value> drill-poc
 ```
+
+## Board management
+
+After creating a board and linking it to your repo through a GitHub app install, you're all set to start adding bounties to your repo's issues.
+
+> Boards consist of a set of bounties.
+
+## Bounty creation
+
+Adding bounty to an issue is quite simple, all it takes is adding a Drill-generated label to the issue. Once the label is picked up by the GitHub app, the label is removed and a _processing_ label is added.
+
+The GitHub app needs access to the board's authority Keypair. Which has to be pre-funded since that wallet is responsible of covering the rent for the bounty-related accounts. Using the local Keypair, the GitHub app will send an instruction to initialize the bounty.
+
+Upon success, a new _enabled_ label is added. For errors it's a different story, some errors are retry-able while others aren't.
+
+Retry-able issues:
+
+- RPC Connection problems.
+
+Non retry-able issues:
+
+- Insufficient funds.
+- Program error.
+
+For non-retryable issues, a label is added as _failed_ and a comment describing the error. For retry-able issues, the app will keep trying until success.
+
+Last thing to cover is the transaction's confirmation. The app will have a timeout of 2 minutes for confirmations. Failing to confirm by that time forces us to check if the TX was written to the chain. For success cases add the _enabled_ label, otherwise, keep trying until the bounty is created and confirmed.
+
+## Closing bounty
+
+When a bounty-enabled issue is closed, the app will send a transaction to mark the bounty as closed and if there's an assignee at the time of closing it's inferred as the bounty hunter. At the time of creation a board manager can define a lock time period, which defines how long a bounty hunter has to wait from the closing time to actually claim the bounty.
+
+> The lock time gives board managers a grace period to change the bounty hunter in case of mistakes.
+
+Similar than creating a bounty, the GitHub app will send and confirm the transaction. The retry-able and non-retryable errors apply too, confirming also works the same way.
+
+## Set bounty hunter
+
+Closed bounty-enabled issues can have their assignee changed by a code owner, in which case, the GitHub picks the change and sends a transaction to change the bounty hunter. Errors and success are dealt in the same manner as the previous points.
+
+## Synced bounty comment
+
+Bounties may increase with time as sponsors deposit into the vaults, in order to reduce the entry barrier, the total accumulated for the bounty is shown in a comment in the issue along with a Solana Pay QR that allows sponsors to deposit while their assets remain safe without having to connect their wallet with yet another dapp.
 
 ## Contributing
 
