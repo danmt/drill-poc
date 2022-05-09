@@ -7,7 +7,10 @@ export const getProvider = async (
   config: SolanaConfig
 ): Promise<AnchorProvider> => {
   const keypair = await getKeypair(config.keypairPath);
-  const connection = new Connection(config.rpcUrl, config.commitment);
+  const connection = new Connection(config.rpcUrl, {
+    commitment: config.commitment,
+    confirmTransactionInitialTimeout: 120_000, // timeout for 2 minutes ~blockhash duration
+  });
   const wallet = new Wallet(keypair);
   return new AnchorProvider(
     connection,

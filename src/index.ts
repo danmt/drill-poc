@@ -1,41 +1,18 @@
-import { Map } from "immutable";
+import { AnchorError, ProgramError } from "@project-serum/anchor";
+import { PublicKey, SimulatedTransactionResponse, TransactionSignature } from "@solana/web3.js";
 import { Probot } from "probot";
-
-type Owner = string;
-type Repository = string;
-type IssueNumber = number;
-type CommentId = number;
-
-type CommentKey = `${Owner}/${Repository}/${IssueNumber}`;
-
-let state = Map<CommentKey, CommentId>();
+import { getProgram, getProvider, getSolanaConfig } from "./utils";
 
 const BOUNTY_LABEL_NAME = "drill:bounty";
-
-const getMentions = (body: string) =>
-  body
-    .split(" ")
-    .filter((segment) => /^@/.test(segment))
-    .map((segment) => segment.slice(1));
-
-const isSendBountyMessage = (body: string) => {
-  const bodyAsArray = body.split(":");
-
-  if (bodyAsArray.length !== 2) {
-    return false;
-  }
-
-  return bodyAsArray[0].toLowerCase() === "send bounty";
-};
-
-const canSendBountyMessage = (authorAssociation: string) =>
-  authorAssociation === "OWNER";
+const ACCEPTED_MINT = new PublicKey(
+  "AeqUCoS56RdzPU2P4L59hkxQKMtEFTqfvbJb77oqm5CT"
+);
 
 export = (app: Probot) => {
   app.on("issues.labeled", async (context) => {
-    // const config = await getSolanaConfig()
-    // const provider = await getProvider(config)
-    // const program = getProgram(provider)
+    const config = await getSolanaConfig();
+    const provider = await getProvider(config);
+    const program = getProgram(provider);
 
     const {
       payload: { label, issue, repository },
@@ -46,69 +23,143 @@ export = (app: Probot) => {
       return;
     }
 
-    const issueComment = context.issue({
-      body: `
-        # Bounties enabled.
-      `,
-    });
-    const { data } = await context.octokit.issues.createComment(issueComment);
-    state = state.set(
-      `${repository.owner.login}/${repository.name}/${issue.number}`,
-      data.id
-    );
-  });
+    await Promise.all([
+      context.octokit.issues.removeLabel(
+        context.issue({
+          name: labelName,
+        })
+      ),
+      context.octokit.issues.addLabels(
+        context.issue({
+          labels: ["drill:bounty:processing"],
+        })
+      ),
+    ]);
 
-  app.on("issues.unlabeled", async (context) => {
-    const {
-      payload: { label, issue, repository },
-    } = context;
-    const labelName = label?.name;
+    try {
+      await program.methods
+        .initializeBounty(repository.id, issue.number)
+        .accounts({
+          acceptedMint: ACCEPTED_MINT,
+          authority: provider.wallet.publicKey,
+        })
+        .simulate();
+    } catch (error) {
+      const simulationResponse = (error as any)
+        .simulationResponse as SimulatedTransactionResponse;
 
-    if (labelName !== BOUNTY_LABEL_NAME) {
+      if (simulationResponse !== null) {
+        await Promise.all([
+          context.octokit.issues.removeLabel(
+            context.issue({
+              name: "drill:bounty:processing",
+            })
+          ),
+          context.octokit.issues.addLabels(
+            context.issue({
+              labels: ["drill:bounty:failed"],
+            })
+          ),
+          context.octokit.issues.createComment(
+            context.issue({
+              body: `
+# ⚠️ Failed creating bounty.
+    
+\`\`\`sh
+${simulationResponse.logs?.join("\n")}
+\`\`\`
+`,
+              contentType: "text/x-markdown",
+            })
+          ),
+        ]);
+      }
+
       return;
     }
 
-    const commentId = state.get(
-      `${repository.owner.login}/${repository.name}/${issue.number}`
-    );
+    let signature: TransactionSignature;
 
-    if (commentId === undefined) {
+    try {
+      signature = await program.methods
+        .initializeBounty(repository.id, issue.number)
+        .accounts({
+          acceptedMint: ACCEPTED_MINT,
+          authority: provider.wallet.publicKey,
+        })
+        .rpc();
+  
+      const explorerUrl = new URL(`https://explorer.solana.com/tx/${signature}`);
+  
+      explorerUrl.searchParams.append("cluster", "custom");
+      explorerUrl.searchParams.append(
+        "customUrl",
+        provider.connection.rpcEndpoint
+      );
+
+      await Promise.all([
+        context.octokit.issues.removeLabel(
+          context.issue({
+            name: "drill:bounty:processing",
+          })
+        ),
+        context.octokit.issues.addLabels(
+          context.issue({
+            labels: ["drill:bounty:enabled"],
+          })
+        ),
+        context.octokit.issues.createComment(
+          context.issue({
+            body: `
+# 💰 Bounty Enabled.
+  
+This issue has an active bounty. [Inspect the transaction](${explorerUrl.toString()}) in the Solana Explorer.
+`,
+            contentType: "text/x-markdown",
+          })
+        ),
+      ]);
+    } catch(error) {
+      let message = '# ⚠️ Failed creating bounty.';
+
+      if (error instanceof Error) {
+        message = `
+${message}
+    
+\`\`\`sh
+${error.message}
+\`\`\`
+`
+      } else if (error instanceof ProgramError || error instanceof AnchorError) {
+        message = `
+${message}
+    
+\`\`\`sh
+${error.logs?.join("\n")}
+\`\`\`
+`
+      }
+
+      await Promise.all([
+        context.octokit.issues.removeLabel(
+          context.issue({
+            name: "drill:bounty:processing",
+          })
+        ),
+        context.octokit.issues.addLabels(
+          context.issue({
+            labels: ["drill:bounty:failed"],
+          })
+        ),
+        context.octokit.issues.createComment(
+          context.issue({
+            body: message,
+            contentType: "text/x-markdown",
+          })
+        ),
+      ])
+
       return;
     }
-
-    state = state.remove(
-      `${repository.owner.login}/${repository.name}/${issue.number}`
-    );
-    await context.octokit.issues.deleteComment({
-      owner: repository.owner.login,
-      repo: repository.name,
-      comment_id: commentId,
-    });
-  });
-
-  app.on("issue_comment.created", async (context) => {
-    const {
-      payload: { comment },
-    } = context;
-
-    // handle a close bounty message as well
-
-    if (!isSendBountyMessage(comment.body)) {
-      return;
-    }
-
-    if (!canSendBountyMessage(comment.author_association)) {
-      return;
-    }
-
-    const mentions = getMentions(comment.body);
-
-    if (mentions.length !== 1) {
-      return;
-    }
-
-    const receiver = mentions[0];
-
-    console.log(`send bounty to @${receiver}`);
   });
 };
