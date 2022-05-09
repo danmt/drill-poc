@@ -1,9 +1,16 @@
 import { AnchorError, ProgramError } from "@project-serum/anchor";
-import { PublicKey, SimulatedTransactionResponse, TransactionSignature } from "@solana/web3.js";
+import { PublicKey, SimulatedTransactionResponse } from "@solana/web3.js";
 import { Probot } from "probot";
-import { getProgram, getProvider, getSolanaConfig } from "./utils";
+import {
+  getBountyClosedCommentBody,
+  getBountyEnabledCommentBody,
+  getErrorCommentBody,
+  getExplorerUrl,
+  getProgram,
+  getProvider,
+  getSolanaConfig,
+} from "./utils";
 
-const BOUNTY_LABEL_NAME = "drill:bounty";
 const ACCEPTED_MINT = new PublicKey(
   "AeqUCoS56RdzPU2P4L59hkxQKMtEFTqfvbJb77oqm5CT"
 );
@@ -17,16 +24,15 @@ export = (app: Probot) => {
     const {
       payload: { label, issue, repository },
     } = context;
-    const labelName = label?.name;
 
-    if (labelName !== BOUNTY_LABEL_NAME) {
+    if (label?.name !== "drill:bounty") {
       return;
     }
 
     await Promise.all([
       context.octokit.issues.removeLabel(
         context.issue({
-          name: labelName,
+          name: "drill:bounty",
         })
       ),
       context.octokit.issues.addLabels(
@@ -62,13 +68,10 @@ export = (app: Probot) => {
           ),
           context.octokit.issues.createComment(
             context.issue({
-              body: `
-# ⚠️ Failed creating bounty.
-    
-\`\`\`sh
-${simulationResponse.logs?.join("\n")}
-\`\`\`
-`,
+              body: getErrorCommentBody(
+                "# ⚠️ Bounty Failed",
+                simulationResponse.logs?.join("\n") ?? ""
+              ),
               contentType: "text/x-markdown",
             })
           ),
@@ -78,24 +81,14 @@ ${simulationResponse.logs?.join("\n")}
       return;
     }
 
-    let signature: TransactionSignature;
-
     try {
-      signature = await program.methods
+      const signature = await program.methods
         .initializeBounty(repository.id, issue.number)
         .accounts({
           acceptedMint: ACCEPTED_MINT,
           authority: provider.wallet.publicKey,
         })
         .rpc();
-  
-      const explorerUrl = new URL(`https://explorer.solana.com/tx/${signature}`);
-  
-      explorerUrl.searchParams.append("cluster", "custom");
-      explorerUrl.searchParams.append(
-        "customUrl",
-        provider.connection.rpcEndpoint
-      );
 
       await Promise.all([
         context.octokit.issues.removeLabel(
@@ -110,34 +103,23 @@ ${simulationResponse.logs?.join("\n")}
         ),
         context.octokit.issues.createComment(
           context.issue({
-            body: `
-# 💰 Bounty Enabled.
-  
-This issue has an active bounty. [Inspect the transaction](${explorerUrl.toString()}) in the Solana Explorer.
-`,
+            body: getBountyEnabledCommentBody(
+              getExplorerUrl(signature, provider.connection.rpcEndpoint)
+            ),
             contentType: "text/x-markdown",
           })
         ),
       ]);
-    } catch(error) {
-      let message = '# ⚠️ Failed creating bounty.';
+    } catch (error) {
+      let message = "";
 
       if (error instanceof Error) {
-        message = `
-${message}
-    
-\`\`\`sh
-${error.message}
-\`\`\`
-`
-      } else if (error instanceof ProgramError || error instanceof AnchorError) {
-        message = `
-${message}
-    
-\`\`\`sh
-${error.logs?.join("\n")}
-\`\`\`
-`
+        message = error.message;
+      } else if (
+        error instanceof ProgramError ||
+        error instanceof AnchorError
+      ) {
+        message = error.logs?.join("\n") ?? "";
       }
 
       await Promise.all([
@@ -153,11 +135,139 @@ ${error.logs?.join("\n")}
         ),
         context.octokit.issues.createComment(
           context.issue({
-            body: message,
+            body: getErrorCommentBody("# ⚠️ Bounty Failed", message),
+
             contentType: "text/x-markdown",
           })
         ),
-      ])
+      ]);
+
+      return;
+    }
+  });
+
+  app.on("issues.closed", async (context) => {
+    const config = await getSolanaConfig();
+    const provider = await getProvider(config);
+    const program = getProgram(provider);
+    const {
+      payload: { issue, repository },
+    } = context;
+
+    if (!issue.labels.some((label) => label.name === "drill:bounty:enabled")) {
+      return;
+    }
+
+    await Promise.all([
+      context.octokit.issues.removeLabel(
+        context.issue({
+          name: "drill:bounty:enabled",
+        })
+      ),
+      context.octokit.issues.addLabels(
+        context.issue({
+          labels: ["drill:bounty:closing"],
+        })
+      ),
+    ]);
+
+    try {
+      await program.methods
+        .closeBounty(repository.id, issue.number, issue.assignee?.login ?? null)
+        .accounts({
+          authority: provider.wallet.publicKey,
+        })
+        .simulate();
+    } catch (error) {
+      const simulationResponse = (error as any)
+        .simulationResponse as SimulatedTransactionResponse;
+
+      if (simulationResponse !== null) {
+        await Promise.all([
+          context.octokit.issues.removeLabel(
+            context.issue({
+              name: "drill:bounty:closing",
+            })
+          ),
+          context.octokit.issues.addLabels(
+            context.issue({
+              labels: ["drill:bounty:close-failed"],
+            })
+          ),
+          context.octokit.issues.createComment(
+            context.issue({
+              body: getErrorCommentBody(
+                "# ⚠️ Failed to close bounty",
+                simulationResponse.logs?.join("\n") ?? ""
+              ),
+              contentType: "text/x-markdown",
+            })
+          ),
+        ]);
+      }
+
+      return;
+    }
+
+    try {
+      const signature = await program.methods
+        .closeBounty(repository.id, issue.number, issue.assignee?.login ?? null)
+        .accounts({
+          authority: provider.wallet.publicKey,
+        })
+        .rpc();
+
+      await Promise.all([
+        context.octokit.issues.removeLabel(
+          context.issue({
+            name: "drill:bounty:closing",
+          })
+        ),
+        context.octokit.issues.addLabels(
+          context.issue({
+            labels: ["drill:bounty:closed"],
+          })
+        ),
+        context.octokit.issues.createComment(
+          context.issue({
+            body: getBountyClosedCommentBody(
+              getExplorerUrl(signature, provider.connection.rpcEndpoint),
+              issue.assignee?.login
+            ),
+            contentType: "text/x-markdown",
+          })
+        ),
+      ]);
+    } catch (error) {
+      let message = "";
+
+      if (error instanceof Error) {
+        message = error.message;
+      } else if (
+        error instanceof ProgramError ||
+        error instanceof AnchorError
+      ) {
+        message = error.logs?.join("\n") ?? "";
+      }
+
+      await Promise.all([
+        context.octokit.issues.removeLabel(
+          context.issue({
+            name: "drill:bounty:closing",
+          })
+        ),
+        context.octokit.issues.addLabels(
+          context.issue({
+            labels: ["drill:bounty:close-failed"],
+          })
+        ),
+        context.octokit.issues.createComment(
+          context.issue({
+            body: getErrorCommentBody("# ⚠️ Failed to close bounty", message),
+            contentType: "text/x-markdown",
+          })
+        ),
+      ]);
 
       return;
     }

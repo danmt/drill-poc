@@ -30,38 +30,37 @@ After creating a board and linking it to your repo through a GitHub app install,
 
 > Boards consist of a set of bounties.
 
+At the time of creation a board manager can define a lock time period, which defines how long a bounty hunter has to wait from the closing time to actually claim the bounty.
+
+> The lock time gives board managers a grace period to change the bounty hunter in case of mistakes.
+
 ## Bounty creation
 
 Adding bounty to an issue is quite simple, all it takes is adding a Drill-generated label to the issue. Once the label is picked up by the GitHub app, the label is removed and a _processing_ label is added.
 
 The GitHub app needs access to the board's authority Keypair. Which has to be pre-funded since that wallet is responsible of covering the rent for the bounty-related accounts. Using the local Keypair, the GitHub app will send an instruction to initialize the bounty.
 
-Upon success, a new _enabled_ label is added. For errors it's a different story, some errors are retry-able while others aren't.
+- On success: Remove _processing_ label, add _enabled_ label and send a comment with information about the bounty.
+- On error: Remove _processing_ label, add _failed_ label and send a comment with the error message.
 
-Retry-able issues:
+NOTE: Transaction is simulated before sending, if an error occurs during simulation: the _failed_ label is added in addition to the logs of the error.
 
-- RPC Connection problems.
-
-Non retry-able issues:
-
-- Insufficient funds.
-- Program error.
-
-For non-retryable issues, a label is added as _failed_ and a comment describing the error. For retry-able issues, the app will keep trying until success.
-
-Last thing to cover is the transaction's confirmation. The app will have a timeout of 2 minutes for confirmations. Failing to confirm by that time forces us to check if the TX was written to the chain. For success cases add the _enabled_ label, otherwise, keep trying until the bounty is created and confirmed.
+Board managers are responsible of retrying failed bounties by putting back the bounty label.
 
 ## Closing bounty
 
 When a bounty-enabled issue is closed, the app will send a transaction to mark the bounty as closed and if there's an assignee at the time of closing it's inferred as the bounty hunter. At the time of creation a board manager can define a lock time period, which defines how long a bounty hunter has to wait from the closing time to actually claim the bounty.
 
-> The lock time gives board managers a grace period to change the bounty hunter in case of mistakes.
+Similar to creating a bounty, the GitHub app will send and confirm the transaction. Different labels are added to let users know the state of the process. As soon as the issue is closed a _closing_ label is added and then:
 
-Similar than creating a bounty, the GitHub app will send and confirm the transaction. The retry-able and non-retryable errors apply too, confirming also works the same way.
+- On success: Remove _closing_ label, add a _closed_ label and a comment stating that the bounty is closed and who's the _bounty hunter_ allowed to claim it.
+- On error: Remove _closing_ label, add a _close-failed_ label and a comment with instructions on how to retry the process.
+
+Retrying the process only takes adding a _manual-close_ label to the issue that will ultimately trigger the same flow as when the issue is closed.
 
 ## Set bounty hunter
 
-Closed bounty-enabled issues can have their assignee changed by a code owner, in which case, the GitHub picks the change and sends a transaction to change the bounty hunter. Errors and success are dealt in the same manner as the previous points.
+Closed bounty-enabled issues can have their assignee changed by a code owner, in which case, the GitHub app picks the change and sends a transaction to change the bounty hunter. Errors and success are dealt in the same manner as the previous points.
 
 ## Synced bounty comment
 
