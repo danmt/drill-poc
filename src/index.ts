@@ -4,6 +4,7 @@ import { Probot } from "probot";
 import {
   getBountyClosedCommentBody,
   getBountyEnabledCommentBody,
+  getBountyHunterChangedCommentBody,
   getErrorCommentBody,
   getErrorMessage,
   getExplorerUrl,
@@ -479,6 +480,125 @@ export = (app: Probot) => {
           context.issue({
             body: getErrorCommentBody(
               "# ⚠️ Failed to close bounty",
+              getErrorMessage(error)
+            ),
+            contentType: "text/x-markdown",
+          })
+        ),
+      ]);
+    }
+  });
+
+  // Handle issue assigned
+  app.on("issues.assigned", async (context) => {
+    const {
+      payload: { issue, repository, assignee },
+    } = context;
+    const config = await getSolanaConfig();
+    const provider = await getProvider(config);
+    const program = getProgram(provider);
+    const [boardPublicKey] = await PublicKey.findProgramAddress(
+      [
+        Buffer.from("board", "utf8"),
+        new BN(repository.id).toArrayLike(Buffer, "le", 4),
+      ],
+      program.programId
+    );
+    const [bountyPublicKey] = await PublicKey.findProgramAddress(
+      [
+        Buffer.from("bounty", "utf8"),
+        boardPublicKey.toBuffer(),
+        new BN(issue.number).toArrayLike(Buffer, "le", 4),
+      ],
+      program.programId
+    );
+    const bountyAccount = await program.account.bounty.fetchNullable(
+      bountyPublicKey
+    );
+
+    if (assignee === undefined || bountyAccount === null || !bountyAccount.isClosed || bountyAccount.isClaimed) {
+      return;
+    }
+
+    await context.octokit.issues.addLabels(
+      context.issue({
+        labels: ["drill:bounty:changing-bounty-hunter"],
+      })
+    );
+
+    try {
+      await program.methods
+        .setBountyHunter(repository.id, issue.number, assignee.login)
+        .accounts({
+          authority: provider.wallet.publicKey,
+        })
+        .simulate();
+    } catch (error) {
+      return Promise.all([
+        context.octokit.issues.removeLabel(
+          context.issue({
+            name: "drill:bounty:changing-bounty-hunter",
+          })
+        ),
+        context.octokit.issues.addLabels(
+          context.issue({
+            labels: ["drill:bounty:change-bounty-hunter-failed"],
+          })
+        ),
+        context.octokit.issues.createComment(
+          context.issue({
+            body: getErrorCommentBody(
+              "# ⚠️ Failed to change bounty hunter",
+              (error as any).simulationResponse === null
+                ? getErrorMessage(error)
+                : (error as any).simulationResponse.logs?.join("\n") ?? ""
+            ),
+            contentType: "text/x-markdown",
+          })
+        ),
+      ]);
+    }
+
+    try {
+      const signature = await program.methods
+        .setBountyHunter(repository.id, issue.number, assignee.login)
+        .accounts({
+          authority: provider.wallet.publicKey,
+        })
+        .rpc();
+
+      return Promise.all([
+        context.octokit.issues.removeLabel(
+          context.issue({
+            name: "drill:bounty:changing-bounty-hunter",
+          })
+        ),
+        context.octokit.issues.createComment(
+          context.issue({
+            body: getBountyHunterChangedCommentBody(
+              getExplorerUrl(signature, provider.connection.rpcEndpoint),
+              assignee.login
+            ),
+            contentType: "text/x-markdown",
+          })
+        ),
+      ]);
+    } catch (error) {
+      return await Promise.all([
+        context.octokit.issues.removeLabel(
+          context.issue({
+            name: "drill:bounty:changing-bounty-hunter",
+          })
+        ),
+        context.octokit.issues.addLabels(
+          context.issue({
+            labels: ["drill:bounty:change-bounty-hunter-failed"],
+          })
+        ),
+        context.octokit.issues.createComment(
+          context.issue({
+            body: getErrorCommentBody(
+              "# ⚠️ Failed to change bounty hunter",
               getErrorMessage(error)
             ),
             contentType: "text/x-markdown",

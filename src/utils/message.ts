@@ -30,3 +30,14 @@ ${message}
 
   return `${title}\n${description}`;
 };
+
+export const getBountyHunterChangedCommentBody = (
+  explorerUrl: string,
+  bountyHunter: string
+) => {
+  const title = "# 🕵🏻 Bounty Hunter Changed";
+  const description = `This issue's bounty hunter has been recently changed. [Inspect the transaction](${explorerUrl.toString()}) in the Solana Explorer.`;
+  const claim = `> @${bountyHunter} can claim this bounty.`;
+
+  return `${title}\n${description}\n${claim}`;
+};
