@@ -1,10 +1,10 @@
-import { AnchorError, ProgramError } from "@project-serum/anchor";
-import { PublicKey, SimulatedTransactionResponse } from "@solana/web3.js";
+import { PublicKey } from "@solana/web3.js";
 import { Probot } from "probot";
 import {
   getBountyClosedCommentBody,
   getBountyEnabledCommentBody,
   getErrorCommentBody,
+  getErrorMessage,
   getExplorerUrl,
   getProgram,
   getProvider,
@@ -51,34 +51,29 @@ export = (app: Probot) => {
         })
         .simulate();
     } catch (error) {
-      const simulationResponse = (error as any)
-        .simulationResponse as SimulatedTransactionResponse;
-
-      if (simulationResponse !== null) {
-        await Promise.all([
-          context.octokit.issues.removeLabel(
-            context.issue({
-              name: "drill:bounty:processing",
-            })
-          ),
-          context.octokit.issues.addLabels(
-            context.issue({
-              labels: ["drill:bounty:failed"],
-            })
-          ),
-          context.octokit.issues.createComment(
-            context.issue({
-              body: getErrorCommentBody(
-                "# ⚠️ Bounty Failed",
-                simulationResponse.logs?.join("\n") ?? ""
-              ),
-              contentType: "text/x-markdown",
-            })
-          ),
-        ]);
-      }
-
-      return;
+      return Promise.all([
+        context.octokit.issues.removeLabel(
+          context.issue({
+            name: "drill:bounty:processing",
+          })
+        ),
+        context.octokit.issues.addLabels(
+          context.issue({
+            labels: ["drill:bounty:failed"],
+          })
+        ),
+        context.octokit.issues.createComment(
+          context.issue({
+            body: getErrorCommentBody(
+              "# ⚠️ Bounty Failed",
+              (error as any).simulationResponse === null
+                ? getErrorMessage(error)
+                : (error as any).simulationResponse.logs?.join("\n") ?? ""
+            ),
+            contentType: "text/x-markdown",
+          })
+        ),
+      ]);
     }
 
     try {
@@ -90,7 +85,7 @@ export = (app: Probot) => {
         })
         .rpc();
 
-      await Promise.all([
+      return Promise.all([
         context.octokit.issues.removeLabel(
           context.issue({
             name: "drill:bounty:processing",
@@ -111,18 +106,7 @@ export = (app: Probot) => {
         ),
       ]);
     } catch (error) {
-      let message = "";
-
-      if (error instanceof Error) {
-        message = error.message;
-      } else if (
-        error instanceof ProgramError ||
-        error instanceof AnchorError
-      ) {
-        message = error.logs?.join("\n") ?? "";
-      }
-
-      await Promise.all([
+      return Promise.all([
         context.octokit.issues.removeLabel(
           context.issue({
             name: "drill:bounty:processing",
@@ -135,14 +119,15 @@ export = (app: Probot) => {
         ),
         context.octokit.issues.createComment(
           context.issue({
-            body: getErrorCommentBody("# ⚠️ Bounty Failed", message),
+            body: getErrorCommentBody(
+              "# ⚠️ Bounty Failed",
+              getErrorMessage(error)
+            ),
 
             contentType: "text/x-markdown",
           })
         ),
       ]);
-
-      return;
     }
   });
 
@@ -179,34 +164,29 @@ export = (app: Probot) => {
         })
         .simulate();
     } catch (error) {
-      const simulationResponse = (error as any)
-        .simulationResponse as SimulatedTransactionResponse;
-
-      if (simulationResponse !== null) {
-        await Promise.all([
-          context.octokit.issues.removeLabel(
-            context.issue({
-              name: "drill:bounty:closing",
-            })
-          ),
-          context.octokit.issues.addLabels(
-            context.issue({
-              labels: ["drill:bounty:close-failed"],
-            })
-          ),
-          context.octokit.issues.createComment(
-            context.issue({
-              body: getErrorCommentBody(
-                "# ⚠️ Failed to close bounty",
-                simulationResponse.logs?.join("\n") ?? ""
-              ),
-              contentType: "text/x-markdown",
-            })
-          ),
-        ]);
-      }
-
-      return;
+      return Promise.all([
+        context.octokit.issues.removeLabel(
+          context.issue({
+            name: "drill:bounty:closing",
+          })
+        ),
+        context.octokit.issues.addLabels(
+          context.issue({
+            labels: ["drill:bounty:close-failed"],
+          })
+        ),
+        context.octokit.issues.createComment(
+          context.issue({
+            body: getErrorCommentBody(
+              "# ⚠️ Failed to close bounty",
+              (error as any).simulationResponse === null
+                ? getErrorMessage(error)
+                : (error as any).simulationResponse.logs?.join("\n") ?? ""
+            ),
+            contentType: "text/x-markdown",
+          })
+        ),
+      ]);
     }
 
     try {
@@ -217,7 +197,7 @@ export = (app: Probot) => {
         })
         .rpc();
 
-      await Promise.all([
+      return Promise.all([
         context.octokit.issues.removeLabel(
           context.issue({
             name: "drill:bounty:closing",
@@ -239,18 +219,7 @@ export = (app: Probot) => {
         ),
       ]);
     } catch (error) {
-      let message = "";
-
-      if (error instanceof Error) {
-        message = error.message;
-      } else if (
-        error instanceof ProgramError ||
-        error instanceof AnchorError
-      ) {
-        message = error.logs?.join("\n") ?? "";
-      }
-
-      await Promise.all([
+      return await Promise.all([
         context.octokit.issues.removeLabel(
           context.issue({
             name: "drill:bounty:closing",
@@ -263,13 +232,14 @@ export = (app: Probot) => {
         ),
         context.octokit.issues.createComment(
           context.issue({
-            body: getErrorCommentBody("# ⚠️ Failed to close bounty", message),
+            body: getErrorCommentBody(
+              "# ⚠️ Failed to close bounty",
+              getErrorMessage(error)
+            ),
             contentType: "text/x-markdown",
           })
         ),
       ]);
-
-      return;
     }
   });
 };
