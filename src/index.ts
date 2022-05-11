@@ -12,10 +12,16 @@ import {
   getProvider,
   getSolanaConfig,
 } from "./utils";
+import { config } from "dotenv";
 
-const ACCEPTED_MINT = new PublicKey(
-  "AeqUCoS56RdzPU2P4L59hkxQKMtEFTqfvbJb77oqm5CT"
-);
+config();
+
+if (process.env.ACCEPTED_MINT === undefined) {
+  throw new Error("ACCEPTED_MINT env variable is missing.");
+}
+
+const ACCEPTED_MINT = new PublicKey(process.env.ACCEPTED_MINT);
+const CLUSTER = process.env.CLUSTER ?? "custom";
 
 export = (app: Probot) => {
   // Handle bounty initialization
@@ -135,7 +141,11 @@ export = (app: Probot) => {
         context.octokit.issues.createComment(
           context.issue({
             body: getBountyEnabledCommentBody(
-              getExplorerUrl(signature, provider.connection.rpcEndpoint)
+              getExplorerUrl(
+                signature,
+                CLUSTER,
+                provider.connection.rpcEndpoint
+              )
             ),
             contentType: "text/x-markdown",
           })
@@ -298,7 +308,11 @@ export = (app: Probot) => {
         context.octokit.issues.createComment(
           context.issue({
             body: getBountyClosedCommentBody(
-              getExplorerUrl(signature, provider.connection.rpcEndpoint),
+              getExplorerUrl(
+                signature,
+                CLUSTER,
+                provider.connection.rpcEndpoint
+              ),
               issue.assignee?.login
             ),
             contentType: "text/x-markdown",
@@ -457,7 +471,11 @@ export = (app: Probot) => {
         context.octokit.issues.createComment(
           context.issue({
             body: getBountyClosedCommentBody(
-              getExplorerUrl(signature, provider.connection.rpcEndpoint),
+              getExplorerUrl(
+                signature,
+                CLUSTER,
+                provider.connection.rpcEndpoint
+              ),
               issue.assignee?.login
             ),
             contentType: "text/x-markdown",
@@ -516,7 +534,12 @@ export = (app: Probot) => {
       bountyPublicKey
     );
 
-    if (assignee === undefined || bountyAccount === null || !bountyAccount.isClosed || bountyAccount.isClaimed) {
+    if (
+      assignee === undefined ||
+      bountyAccount === null ||
+      !bountyAccount.isClosed ||
+      bountyAccount.isClaimed
+    ) {
       return;
     }
 
@@ -576,7 +599,11 @@ export = (app: Probot) => {
         context.octokit.issues.createComment(
           context.issue({
             body: getBountyHunterChangedCommentBody(
-              getExplorerUrl(signature, provider.connection.rpcEndpoint),
+              getExplorerUrl(
+                signature,
+                CLUSTER,
+                provider.connection.rpcEndpoint
+              ),
               assignee.login
             ),
             contentType: "text/x-markdown",
