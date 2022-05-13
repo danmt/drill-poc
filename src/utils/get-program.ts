@@ -1,6 +1,6 @@
 import { AnchorProvider, Program } from '@project-serum/anchor'
 import { PublicKey } from '@solana/web3.js';
-import { DrillProgramPoc, IDL } from '../program/drill_program_poc'
+import { Drill, IDL } from '../program/drill'
 
 // TODO: read programId in some other way
 if (process.env.PROGRAM_ID === undefined) {
@@ -11,6 +11,6 @@ const PROGRAM_ID = new PublicKey(process.env.PROGRAM_ID);
 
 export const getProgram = (
   provider: AnchorProvider
-): Program<DrillProgramPoc> => {
-  return new Program<DrillProgramPoc>(IDL, PROGRAM_ID, provider)
+): Program<Drill> => {
+  return new Program<Drill>(IDL, PROGRAM_ID, provider)
 }

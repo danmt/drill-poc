@@ -537,8 +537,7 @@ export = (app: Probot) => {
     if (
       assignee === undefined ||
       bountyAccount === null ||
-      !bountyAccount.isClosed ||
-      bountyAccount.isClaimed
+      !bountyAccount.isClosed
     ) {
       return;
     }
