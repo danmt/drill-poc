@@ -1,6 +1,6 @@
 # Drill Github App Template
 
-A template for a GitHub app made using Probot, the intention of this template is to be used by the Drill CLI to generate custodial GitHub apps that enable the Drill Bounty Program directly in GitHub.
+A template for a GitHub app made using Probot, the intention of this template is to be used by the Drill CLI to generate non-custodial GitHub apps that enable the Drill Bounty Program directly in GitHub.
 
 Once you have linked your repo to a board it's a matter of deploying your GitHub app to your desired location and install your app into the repository. **Ideally**, you are only allowed to install the app in the repo matching the board.
 
